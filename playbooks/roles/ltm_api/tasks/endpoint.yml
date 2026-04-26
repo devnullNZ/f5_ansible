@@ -1,4 +1,8 @@
 ---
+- name: "{{ endpoint.name }} :: SSL profiles"
+  include_tasks: ssl.yml
+  when: endpoint.ssl is defined
+
 - name: "{{ endpoint.name }} :: pool {{ endpoint.pool.name }}"
   bigip_pool:
     provider: "{{ f5_provider }}"
@@ -29,6 +33,13 @@
     port: "{{ endpoint.port }}"
     pool: "{{ endpoint.pool.name }}"
     snat: "{{ endpoint.snat | default('Automap') }}"
-    profiles: "{{ endpoint.profiles | default(['http', 'clientssl']) }}"
+    profiles: "{{ endpoint_profiles }}"
     partition: "{{ endpoint.partition | default('Common') }}"
     state: present
+  vars:
+    base_profiles: "{{ endpoint.profiles | default(['http']) }}"
+    clientssl_profile: >-
+      {{ [endpoint.ssl.clientssl.profile] if (endpoint.ssl.clientssl.profile is defined) else [] }}
+    serverssl_profile: >-
+      {{ [endpoint.ssl.serverssl.profile] if (endpoint.ssl.serverssl is defined and endpoint.ssl.serverssl.profile is defined) else [] }}
+    endpoint_profiles: "{{ (base_profiles + clientssl_profile + serverssl_profile) | unique | list }}"

@@ -106,6 +106,20 @@
   loop_control:
     label: "{{ item.name }}@{{ item.address }}"
 
+# bigip_gtm_dns_listener does not expose a profiles: argument and the
+# default DNS profile is not auto-attached on this collection version.
+# Without /Common/dns (or another GTM-enabled DNS profile) the listener
+# accepts no queries. Attach via tmsh.
+- name: Attach DNS profile to GTM listeners
+  bigip_command:
+    provider: "{{ f5_provider }}"
+    commands:
+      - "modify gtm listener {{ item.name }} profiles add { {{ item.dns_profile | default('/Common/dns') }} }"
+  loop: "{{ gslb_listeners }}"
+  loop_control:
+    label: "{{ item.name }} += {{ item.dns_profile | default('/Common/dns') }}"
+  changed_when: false   # tmsh modify is idempotent but never reports "changed"
+
 # =========================
 # VALIDATE
 # =========================

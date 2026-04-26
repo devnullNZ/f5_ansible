@@ -49,6 +49,10 @@ gslb_widips:
 
 gslb_listeners:
   - name: dns_listener_v4
-    address: 192.168.80.131
+    address: 192.168.152.10
     port: 53
     ip_protocol: udp
+  - name: dns_listener_v4_tcp
+    address: 192.168.152.10
+    port: 53
+    ip_protocol: tcp

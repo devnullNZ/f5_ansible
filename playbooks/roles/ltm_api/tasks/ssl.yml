@@ -1,0 +1,91 @@
+---
+# Optional per-endpoint SSL profile creation. Triggered when the endpoint
+# has an `ssl:` block. Cert/key upload is skipped if cert_src/key_src are
+# not provided (i.e. caller pre-staged them or wants the profile to use
+# an existing cert).
+#
+# Schema (all fields optional except where noted):
+#   ssl:
+#     clientssl:
+#       profile: api_clientssl     # required when clientssl block present
+#       cert_name: api_cert        # used as /Common/<cert_name>
+#       cert_src:  ./certs/api.crt # local file; uploaded if set
+#       key_name:  api_key
+#       key_src:   ./certs/api.key
+#       parent: /Common/clientssl  # optional; defaults to /Common/clientssl
+#       ciphers: 'DEFAULT'         # optional
+#     serverssl:                   # optional
+#       profile: api_serverssl
+#       parent: /Common/serverssl
+#       cert_name: ...             # optional (mTLS to backend)
+#       cert_src: ...
+#       key_name: ...
+#       key_src: ...
+
+- name: "{{ endpoint.name }} :: upload clientssl certificate"
+  bigip_ssl_certificate:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.clientssl.cert_name }}"
+    content: "{{ lookup('file', endpoint.ssl.clientssl.cert_src) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.ssl.clientssl is defined
+    - endpoint.ssl.clientssl.cert_src is defined
+
+- name: "{{ endpoint.name }} :: upload clientssl key"
+  bigip_ssl_key:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.clientssl.key_name }}"
+    content: "{{ lookup('file', endpoint.ssl.clientssl.key_src) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.ssl.clientssl is defined
+    - endpoint.ssl.clientssl.key_src is defined
+  no_log: true
+
+- name: "{{ endpoint.name }} :: create clientssl profile"
+  bigip_profile_client_ssl:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.clientssl.profile }}"
+    parent: "{{ endpoint.ssl.clientssl.parent | default('/Common/clientssl') }}"
+    cert_key_chain:
+      - cert: "{{ endpoint.ssl.clientssl.cert_name }}"
+        key: "{{ endpoint.ssl.clientssl.key_name }}"
+    ciphers: "{{ endpoint.ssl.clientssl.ciphers | default(omit) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when: endpoint.ssl.clientssl is defined
+
+- name: "{{ endpoint.name }} :: upload serverssl certificate"
+  bigip_ssl_certificate:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.serverssl.cert_name }}"
+    content: "{{ lookup('file', endpoint.ssl.serverssl.cert_src) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.ssl.serverssl is defined
+    - endpoint.ssl.serverssl.cert_src is defined
+
+- name: "{{ endpoint.name }} :: upload serverssl key"
+  bigip_ssl_key:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.serverssl.key_name }}"
+    content: "{{ lookup('file', endpoint.ssl.serverssl.key_src) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.ssl.serverssl is defined
+    - endpoint.ssl.serverssl.key_src is defined
+  no_log: true
+
+- name: "{{ endpoint.name }} :: create serverssl profile"
+  bigip_profile_server_ssl:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.ssl.serverssl.profile }}"
+    parent: "{{ endpoint.ssl.serverssl.parent | default('/Common/serverssl') }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when: endpoint.ssl.serverssl is defined

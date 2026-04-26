@@ -7,13 +7,19 @@
       - (vs.destination_port | int) == (endpoint.port | int)
       - vs.default_pool == ('/' ~ (endpoint.partition | default('Common')) ~ '/' ~ endpoint.pool.name)
       - (vs.profiles | map(attribute='name') | list)
-          is superset(endpoint.profiles | default(['http', 'clientssl']))
+          is superset(expected_profile_names)
     fail_msg: "{{ endpoint.name }} configuration mismatch: {{ vs | default('missing') }}"
   vars:
     vs: >-
       {{ (ltm_facts.virtual_servers | default([]))
          | selectattr('name', 'equalto', endpoint.name)
          | list | first | default(none) }}
+    base_profiles: "{{ endpoint.profiles | default(['http']) }}"
+    clientssl_extra: >-
+      {{ [endpoint.ssl.clientssl.profile] if (endpoint.ssl is defined and endpoint.ssl.clientssl is defined) else [] }}
+    serverssl_extra: >-
+      {{ [endpoint.ssl.serverssl.profile] if (endpoint.ssl is defined and endpoint.ssl.serverssl is defined) else [] }}
+    expected_profile_names: "{{ (base_profiles + clientssl_extra + serverssl_extra) | unique | list }}"
 
 - name: "{{ endpoint.name }} :: assert pool members configured"
   assert:

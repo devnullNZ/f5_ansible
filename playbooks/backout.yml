@@ -1,0 +1,135 @@
+---
+# Backout playbook — removes the resources defined in inventory in
+# reverse-create order. Use to roll back a recent run of site.yml.
+#
+# IMPORTANT
+# ---------
+# Backout is symmetric with the inventory: it removes exactly the
+# resources named in the host_vars / group_vars that drove site.yml.
+# It does NOT remove:
+#   - GTM datacenters (often shared / referenced by unrelated configs)
+#   - GTM module provisioning (potentially destructive)
+#   - SSL certs / keys / profiles uploaded for endpoints (kept so a
+#     subsequent re-create reuses them; remove manually if needed)
+#
+# Run with the confirm flag to proceed:
+#   ansible-playbook playbooks/backout.yml -e confirm=yes
+
+- name: Confirmation gate
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Require explicit confirmation
+      assert:
+        that:
+          - confirm | default('') == 'yes'
+        fail_msg: |
+          Refusing to run. Re-invoke with -e confirm=yes:
+            ansible-playbook playbooks/backout.yml -e confirm=yes
+
+
+# ---------- Tear down GSLB first (depends on LTM VS objects) ----------
+- name: Backout F5 GSLB
+  hosts: f5_gtm_primary
+  connection: local
+  gather_facts: no
+  collections:
+    - f5networks.f5_modules
+  tasks:
+    - name: Discover OpenShift Wide IPs (so we know what to remove)
+      include_role:
+        name: openshift_routes
+      when: openshift_clusters | default([]) | length > 0
+      ignore_errors: yes   # cluster may already be gone; backout should still proceed
+
+    - name: Remove DNS listeners
+      f5networks.f5_modules.bigip_gtm_dns_listener:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.name }}"
+        address: "{{ item.address }}"
+        port: "{{ item.port | default(53) }}"
+        state: absent
+      loop: "{{ gslb_listeners }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Remove Wide IPs
+      bigip_gtm_wide_ip:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.name }}"
+        type: "{{ item.type | default('a') }}"
+        state: absent
+      loop: "{{ gslb_widips }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Remove GSLB pool members
+      bigip_gtm_pool_member:
+        provider: "{{ f5_provider }}"
+        pool: "{{ item.0.name }}"
+        server_name: "{{ item.1.server_name }}"
+        virtual_server: "{{ item.1.virtual_server }}"
+        type: "{{ item.0.type | default('a') }}"
+        state: absent
+      loop: "{{ gslb_pools | subelements('members') }}"
+      loop_control:
+        label: "{{ item.0.name }} <- {{ item.1.server_name }}:{{ item.1.virtual_server }}"
+
+    - name: Remove GSLB pools
+      bigip_gtm_pool:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.name }}"
+        type: "{{ item.type | default('a') }}"
+        state: absent
+      loop: "{{ gslb_pools }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Remove GTM virtual-server registrations
+      bigip_gtm_virtual_server:
+        provider: "{{ f5_provider }}"
+        server_name: "{{ item.0.name }}"
+        name: "{{ item.1.name }}"
+        state: absent
+      loop: "{{ gtm_servers | subelements('virtual_servers', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.name }}/{{ item.1.name }}"
+
+    - name: Remove GTM servers
+      bigip_gtm_server:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.name }}"
+        state: absent
+      loop: "{{ gtm_servers }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+
+# ---------- Tear down LTM endpoints ----------
+- name: Backout F5 LTM endpoints
+  hosts: f5
+  connection: local
+  gather_facts: no
+  collections:
+    - f5networks.f5_modules
+  tasks:
+    - name: Remove virtual servers
+      bigip_virtual_server:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.name }}"
+        partition: "{{ item.partition | default('Common') }}"
+        state: absent
+      loop: "{{ ltm_endpoints }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Remove pools (drops members with them)
+      bigip_pool:
+        provider: "{{ f5_provider }}"
+        name: "{{ item.pool.name }}"
+        partition: "{{ item.partition | default('Common') }}"
+        state: absent
+      loop: "{{ ltm_endpoints }}"
+      loop_control:
+        label: "{{ item.pool.name }}"
