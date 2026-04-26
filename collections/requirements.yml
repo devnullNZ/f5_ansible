@@ -1,0 +1,6 @@
+---
+collections:
+  - name: f5networks.f5_modules
+    version: ">=1.32.0,<2.0.0"
+  - name: kubernetes.core
+    version: ">=3.0.0,<4.0.0"

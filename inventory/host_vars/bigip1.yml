@@ -1,0 +1,54 @@
+---
+# Lab single-box BIG-IP — runs both LTM and GTM (primary).
+# In production each device file usually defines a subset of these.
+
+ansible_host: 192.168.80.130
+
+# ----- LTM endpoints -----
+ltm_endpoints:
+  - name: api_vs
+    destination: 192.168.1.100
+    port: 443
+    snat: Automap
+    profiles:
+      - http
+      - clientssl
+    pool:
+      name: api_pool
+      lb_method: round-robin
+      monitor: /Common/http
+      members:
+        - { host: 10.1.1.10, port: 80 }
+        - { host: 10.1.1.11, port: 80 }
+
+# ----- GSLB topology (only meaningful on hosts in f5_gtm_primary) -----
+gtm_datacenters:
+  - name: dc1
+    # location: "Phoenix"     # optional
+    # contact: "netops@..."   # optional
+    # description: "..."      # optional
+
+gtm_servers:
+  - name: ltm1
+    datacenter: dc1
+    address: 192.168.80.130
+    virtual_servers:
+      - { name: api_vs, address: 192.168.1.100, port: 443 }
+
+gslb_pools:
+  - name: api_gslb_pool
+    monitor: /Common/http
+    members:
+      - { server_name: ltm1, virtual_server: api_vs }
+
+gslb_widips:
+  - name: api.example.com
+    pool_lb_method: round-robin
+    pools:
+      - { name: api_gslb_pool }
+
+gslb_listeners:
+  - name: dns_listener_v4
+    address: 192.168.80.131
+    port: 53
+    ip_protocol: udp

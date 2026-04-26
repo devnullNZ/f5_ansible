@@ -1,0 +1,22 @@
+---
+- name: Create LTM endpoint {{ endpoint.name }}
+  include_tasks: endpoint.yml
+  loop: "{{ ltm_endpoints }}"
+  loop_control:
+    loop_var: endpoint
+    label: "{{ endpoint.name }}"
+
+- name: Gather LTM virtual server + pool facts
+  bigip_device_info:
+    provider: "{{ f5_provider }}"
+    gather_subset:
+      - virtual-servers
+      - ltm-pools
+  register: ltm_facts
+
+- name: Validate LTM endpoint {{ endpoint.name }}
+  include_tasks: validate.yml
+  loop: "{{ ltm_endpoints }}"
+  loop_control:
+    loop_var: endpoint
+    label: "{{ endpoint.name }}"

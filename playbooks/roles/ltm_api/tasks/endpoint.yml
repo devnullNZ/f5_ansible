@@ -1,0 +1,34 @@
+---
+- name: "{{ endpoint.name }} :: pool {{ endpoint.pool.name }}"
+  bigip_pool:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.pool.name }}"
+    lb_method: "{{ endpoint.pool.lb_method | default('round-robin') }}"
+    monitors:
+      - "{{ endpoint.pool.monitor | default('/Common/http') }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+
+- name: "{{ endpoint.name }} :: pool members"
+  bigip_pool_member:
+    provider: "{{ f5_provider }}"
+    pool: "{{ endpoint.pool.name }}"
+    host: "{{ item.host }}"
+    port: "{{ item.port | default(80) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  loop: "{{ endpoint.pool.members }}"
+  loop_control:
+    label: "{{ item.host }}:{{ item.port | default(80) }}"
+
+- name: "{{ endpoint.name }} :: virtual server"
+  bigip_virtual_server:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.name }}"
+    destination: "{{ endpoint.destination }}"
+    port: "{{ endpoint.port }}"
+    pool: "{{ endpoint.pool.name }}"
+    snat: "{{ endpoint.snat | default('Automap') }}"
+    profiles: "{{ endpoint.profiles | default(['http', 'clientssl']) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present

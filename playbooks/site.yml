@@ -1,0 +1,33 @@
+---
+# Play 1: LTM endpoints. Runs against every f5 host that has any
+# ltm_endpoints defined. Hosts with empty/missing list are skipped.
+- name: Configure F5 LTM endpoints
+  hosts: f5
+  connection: local
+  gather_facts: no
+  collections:
+    - f5networks.f5_modules
+  roles:
+    - role: ltm_api
+      when: ltm_endpoints | default([]) | length > 0
+
+
+# Play 2: GSLB. Runs only against the primary GTM in each sync group.
+# GTM sync replicates the configuration to standby peers, so writing it
+# from a single host avoids duplicate-write conflicts.
+#
+# openshift_routes runs first when openshift_clusters is non-empty: it
+# queries Route resources and appends synthesized entries to gslb_widips
+# before the gslb role consumes the merged list.
+- name: Configure F5 GSLB
+  hosts: f5_gtm_primary
+  connection: local
+  gather_facts: no
+  collections:
+    - f5networks.f5_modules
+  roles:
+    - role: openshift_routes
+      when: openshift_clusters | default([]) | length > 0
+    - role: gslb
+      when: gslb_widips | default([]) | length > 0
+                or openshift_clusters | default([]) | length > 0

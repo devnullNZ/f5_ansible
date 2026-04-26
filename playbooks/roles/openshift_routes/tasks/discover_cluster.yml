@@ -1,0 +1,49 @@
+---
+# Per-cluster discovery. `cluster` is the loop var supplied by main.yml.
+#
+# Expected fields on each cluster entry:
+#   name              - human label (used in messages)
+#   host              - https://api.<cluster>:6443
+#   token             - bearer token (vault-encrypt this)
+#   validate_certs    - bool, default true
+#   ca_cert           - optional path to CA bundle
+#   namespaces        - optional list; if omitted, all accessible namespaces
+#   pool              - GSLB pool to bind every Wide IP from this cluster to
+#   pool_lb_method    - optional; default round-robin
+#   widip_type        - optional; default 'a'
+
+- name: "{{ cluster.name }} :: list Routes"
+  kubernetes.core.k8s_info:
+    api_key: "{{ cluster.token }}"
+    host: "{{ cluster.host }}"
+    validate_certs: "{{ cluster.validate_certs | default(true) }}"
+    ca_cert: "{{ cluster.ca_cert | default(omit) }}"
+    kind: Route
+    api_version: route.openshift.io/v1
+    namespace: "{{ ns | default(omit) }}"
+  register: cluster_routes
+  delegate_to: localhost
+  loop: "{{ cluster.namespaces | default([None]) }}"
+  loop_control:
+    loop_var: ns
+    label: "{{ ns | default('<all namespaces>') }}"
+
+- name: "{{ cluster.name }} :: extract unique Route hostnames"
+  set_fact:
+    cluster_hosts: >-
+      {{ cluster_routes.results
+         | map(attribute='resources') | flatten
+         | map(attribute='spec.host') | unique | list }}
+
+- name: "{{ cluster.name }} :: synthesize Wide IPs"
+  set_fact:
+    discovered_widips: >-
+      {{ discovered_widips + [{
+            'name': item,
+            'type': cluster.widip_type | default('a'),
+            'pool_lb_method': cluster.pool_lb_method | default('round-robin'),
+            'pools': [{'name': cluster.pool}]
+         }] }}
+  loop: "{{ cluster_hosts }}"
+  loop_control:
+    label: "{{ item }} -> {{ cluster.pool }}"

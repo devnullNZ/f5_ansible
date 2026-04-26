@@ -1,0 +1,31 @@
+---
+# Discovers OpenShift Route hostnames per cluster and synthesizes
+# Wide IP entries bound to a user-specified GSLB pool. The resulting
+# entries are appended to gslb_widips before the gslb role consumes it.
+#
+# Per-cluster topology (GTM servers, GSLB pools with member virtual
+# servers pointing at each cluster's L7 router IP) must already be
+# defined in host_vars — this role only handles the per-Route Wide IP
+# layer, not the underlying pool/server topology.
+
+- name: Initialize discovered Wide IP list
+  set_fact:
+    discovered_widips: []
+
+- name: Discover routes from each OpenShift cluster
+  include_tasks: discover_cluster.yml
+  loop: "{{ openshift_clusters }}"
+  loop_control:
+    loop_var: cluster
+    label: "{{ cluster.name }}"
+
+- name: Merge discovered Wide IPs into gslb_widips
+  set_fact:
+    gslb_widips: "{{ gslb_widips + discovered_widips }}"
+
+- name: Report discovered Wide IPs
+  debug:
+    msg: >-
+      Discovered {{ discovered_widips | length }} Wide IP(s) from
+      {{ openshift_clusters | length }} OpenShift cluster(s):
+      {{ discovered_widips | map(attribute='name') | list }}

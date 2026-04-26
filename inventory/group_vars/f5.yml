@@ -1,0 +1,31 @@
+---
+# All F5 tasks run with connection: local, so the "remote" interpreter
+# is just the Python that invoked ansible-playbook (the venv).
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+f5_admin_user: admin
+f5_admin_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          39386335356235303830633431313264666436643735386639646130643863313830666430383434
+          3736626539306463346635653363336431353934623265390a633765633535633561346330333665
+          35333837616664313836626130303933613732343165616364366538306161343437346466663963
+          3264343237626138350a383533653261343033353434396430383530323435343531356433343731
+          3661
+
+f5_provider:
+  server: "{{ ansible_host }}"
+  user: "{{ f5_admin_user }}"
+  password: "{{ f5_admin_password }}"
+  validate_certs: false
+  server_port: 443
+
+# Per-device endpoint definitions live in host_vars/<device>.yml.
+# Both lists default to empty so each role auto-skips on devices that
+# don't define the relevant endpoints.
+ltm_endpoints: []
+gtm_datacenters: []
+gtm_servers: []
+gslb_pools: []
+gslb_widips: []
+gslb_listeners: []
+openshift_clusters: []

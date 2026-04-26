@@ -1,0 +1,40 @@
+---
+- name: "{{ endpoint.name }} :: assert virtual server configured correctly"
+  assert:
+    that:
+      - vs is not none
+      - vs.destination_address == endpoint.destination
+      - (vs.destination_port | int) == (endpoint.port | int)
+      - vs.default_pool == ('/' ~ (endpoint.partition | default('Common')) ~ '/' ~ endpoint.pool.name)
+      - (vs.profiles | map(attribute='name') | list)
+          is superset(endpoint.profiles | default(['http', 'clientssl']))
+    fail_msg: "{{ endpoint.name }} configuration mismatch: {{ vs | default('missing') }}"
+  vars:
+    vs: >-
+      {{ (ltm_facts.virtual_servers | default([]))
+         | selectattr('name', 'equalto', endpoint.name)
+         | list | first | default(none) }}
+
+- name: "{{ endpoint.name }} :: assert pool members configured"
+  assert:
+    that:
+      - pool is not none
+      - (pool.members | default([])) | length == (endpoint.pool.members | length)
+    fail_msg: "{{ endpoint.pool.name }} member count mismatch: {{ pool | default('missing') }}"
+  vars:
+    pool: >-
+      {{ (ltm_facts.ltm_pools | default([]))
+         | selectattr('name', 'equalto', endpoint.pool.name)
+         | list | first | default(none) }}
+
+- name: "{{ endpoint.name }} :: report runtime availability"
+  debug:
+    msg: >-
+      {{ endpoint.name }} availability_status={{ vs.availability_status }}
+      ({{ vs.status_reason | default('') }})
+  vars:
+    vs: >-
+      {{ (ltm_facts.virtual_servers | default([]))
+         | selectattr('name', 'equalto', endpoint.name)
+         | list | first }}
+  when: vs.availability_status != 'available'

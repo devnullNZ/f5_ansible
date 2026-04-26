@@ -1,0 +1,46 @@
+---
+- name: "{{ widip.name }} :: assert configured and bound to expected pools"
+  assert:
+    that:
+      - w is not none
+      - (w.pools | default([])) | map(attribute='name') | list | sort
+          == (widip.pools | map(attribute='name') | list | sort)
+    fail_msg: "{{ widip.name }} missing or pool bindings differ: {{ w | default('missing') }}"
+  vars:
+    w: >-
+      {{ (gtm_facts.gtm_a_wide_ips | default([]))
+         | selectattr('name', 'equalto', widip.name)
+         | list | first | default(none) }}
+
+- name: "{{ widip.name }} :: report runtime availability"
+  debug:
+    msg: >-
+      {{ widip.name }} availability={{ w.availability_state | default('unknown') }}
+      enabled={{ w.enabled | default('?') }}
+      ({{ w.status_reason | default('') }})
+  vars:
+    w: >-
+      {{ (gtm_facts.gtm_a_wide_ips | default([]))
+         | selectattr('name', 'equalto', widip.name)
+         | list | first }}
+
+- name: "{{ widip.name }} :: dig against each listener"
+  command: dig +short +time=2 +tries=2 {{ widip.name }} @{{ listener.address }}
+  register: dig_result
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  loop: "{{ gslb_listeners }}"
+  loop_control:
+    loop_var: listener
+    label: "@{{ listener.address }}"
+
+- name: "{{ widip.name }} :: report DNS resolution per listener"
+  debug:
+    msg: >-
+      dig {{ widip.name }} @{{ item.listener.address }} ->
+      {{ item.stdout if item.stdout | default('') | trim | length > 0
+         else '(no answer — expected if backends are unreachable in lab)' }}
+  loop: "{{ dig_result.results }}"
+  loop_control:
+    label: "@{{ item.listener.address }}"

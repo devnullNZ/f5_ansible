@@ -1,0 +1,16 @@
+# Ansible engine
+ansible-core>=2.15,<2.18
+
+# f5networks.f5_modules runtime deps
+cryptography
+objectpath
+packaging
+simplejson
+
+# kubernetes.core collection runtime deps (used by openshift_routes role
+# to query OpenShift Route resources)
+kubernetes>=24.2.0
+
+# DNS validation step (dig) is invoked via the system binary, not Python,
+# so no resolver library is required here. Ensure `dig` (bind-utils /
+# dnsutils) is installed on the Ansible control node.

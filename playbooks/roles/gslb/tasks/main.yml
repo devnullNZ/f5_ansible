@@ -1,0 +1,125 @@
+---
+# =========================
+# F5 GTM / GSLB ROLE
+# Loops over per-host gtm_servers / gslb_pools / gslb_widips / gslb_listeners.
+# Run only against the primary GTM in a sync group; sync propagates the
+# config to standby peers.
+# =========================
+
+- name: Ensure GTM (DNS) module is provisioned
+  bigip_provision:
+    provider: "{{ f5_provider }}"
+    module: gtm
+    level: nominal
+
+- name: Ensure GTM datacenters
+  bigip_gtm_datacenter:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    location: "{{ item.location | default(omit) }}"
+    contact: "{{ item.contact | default(omit) }}"
+    description: "{{ item.description | default(omit) }}"
+    state: present
+  loop: "{{ gtm_datacenters }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ----- GTM servers -----
+- name: Create GTM servers
+  bigip_gtm_server:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    datacenter: "{{ item.datacenter }}"
+    server_type: "{{ item.server_type | default('bigip') }}"
+    devices:
+      - name: "{{ item.name }}"
+        address: "{{ item.address }}"
+    virtual_server_discovery: disabled
+    state: present
+  loop: "{{ gtm_servers }}"
+  loop_control:
+    label: "{{ item.name }} @ {{ item.datacenter }}"
+
+- name: Register virtual servers under each GTM server
+  bigip_gtm_virtual_server:
+    provider: "{{ f5_provider }}"
+    server_name: "{{ item.0.name }}"
+    name: "{{ item.1.name }}"
+    address: "{{ item.1.address }}"
+    port: "{{ item.1.port }}"
+    state: present
+  loop: "{{ gtm_servers | subelements('virtual_servers', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1.name }}"
+
+# ----- GSLB pools -----
+- name: Create GSLB pools
+  bigip_gtm_pool:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    type: "{{ item.type | default('a') }}"
+    partition: "{{ item.partition | default('Common') }}"
+    preferred_lb_method: "{{ item.preferred_lb_method | default('round-robin') }}"
+    monitors:
+      - "{{ item.monitor | default('/Common/http') }}"
+    state: present
+  loop: "{{ gslb_pools }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Add GSLB pool members
+  bigip_gtm_pool_member:
+    provider: "{{ f5_provider }}"
+    pool: "{{ item.0.name }}"
+    server_name: "{{ item.1.server_name }}"
+    virtual_server: "{{ item.1.virtual_server }}"
+    type: "{{ item.0.type | default('a') }}"
+    state: present
+  loop: "{{ gslb_pools | subelements('members') }}"
+  loop_control:
+    label: "{{ item.0.name }} <- {{ item.1.server_name }}:{{ item.1.virtual_server }}"
+
+# ----- Wide IPs -----
+- name: Create Wide IPs
+  bigip_gtm_wide_ip:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    type: "{{ item.type | default('a') }}"
+    pool_lb_method: "{{ item.pool_lb_method | default('round-robin') }}"
+    pools: "{{ item.pools }}"
+    state: present
+  loop: "{{ gslb_widips }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ----- DNS listeners -----
+- name: Create GTM DNS listeners
+  f5networks.f5_modules.bigip_gtm_dns_listener:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    address: "{{ item.address }}"
+    port: "{{ item.port | default(53) }}"
+    ip_protocol: "{{ item.ip_protocol | default('udp') }}"
+    advertise: "{{ item.advertise | default(false) }}"
+    state: present
+  loop: "{{ gslb_listeners }}"
+  loop_control:
+    label: "{{ item.name }}@{{ item.address }}"
+
+# =========================
+# VALIDATE
+# =========================
+- name: Gather GTM facts
+  bigip_device_info:
+    provider: "{{ f5_provider }}"
+    gather_subset:
+      - gtm-a-wide-ips
+      - gtm-a-pools
+  register: gtm_facts
+
+- name: Validate Wide IP {{ widip.name }}
+  include_tasks: validate.yml
+  loop: "{{ gslb_widips }}"
+  loop_control:
+    loop_var: widip
+    label: "{{ widip.name }}"
