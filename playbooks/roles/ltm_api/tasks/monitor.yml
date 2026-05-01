@@ -1,0 +1,63 @@
+---
+# Optional per-endpoint health monitor. Triggered when `endpoint.monitor` is set.
+# Falls back to `endpoint.pool.monitor` (string ref) or /Common/http if absent.
+#
+# Schema:
+#   monitor:
+#     name: api_v1_https        # required
+#     type: https               # http | https | tcp (default: http)
+#     send: "GET /healthz HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+#     receive: "200 OK"
+#     interval: 5               # seconds
+#     timeout: 16               # seconds
+#     ip: '*'                   # optional; '*' = use pool member's IP
+#     port: 443                 # optional explicit port; '*' = pool member's port
+#                               # NOTE: pinning port requires ip too — '*' is fine
+
+- name: "{{ endpoint.name }} :: create http monitor"
+  bigip_monitor_http:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.monitor.name }}"
+    send: "{{ endpoint.monitor.send | default(omit) }}"
+    receive: "{{ endpoint.monitor.receive | default(omit) }}"
+    interval: "{{ endpoint.monitor.interval | default(5) }}"
+    timeout: "{{ endpoint.monitor.timeout | default(16) }}"
+    ip: "{{ endpoint.monitor.ip | default('*') }}"
+    port: "{{ endpoint.monitor.port | default('*') }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.monitor is defined
+    - (endpoint.monitor.type | default('http')) == 'http'
+
+- name: "{{ endpoint.name }} :: create https monitor"
+  bigip_monitor_https:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.monitor.name }}"
+    send: "{{ endpoint.monitor.send | default(omit) }}"
+    receive: "{{ endpoint.monitor.receive | default(omit) }}"
+    interval: "{{ endpoint.monitor.interval | default(5) }}"
+    timeout: "{{ endpoint.monitor.timeout | default(16) }}"
+    ip: "{{ endpoint.monitor.ip | default('*') }}"
+    port: "{{ endpoint.monitor.port | default('*') }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.monitor is defined
+    - (endpoint.monitor.type | default('http')) == 'https'
+
+- name: "{{ endpoint.name }} :: create tcp monitor"
+  bigip_monitor_tcp:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.monitor.name }}"
+    send: "{{ endpoint.monitor.send | default(omit) }}"
+    receive: "{{ endpoint.monitor.receive | default(omit) }}"
+    interval: "{{ endpoint.monitor.interval | default(5) }}"
+    timeout: "{{ endpoint.monitor.timeout | default(16) }}"
+    ip: "{{ endpoint.monitor.ip | default('*') }}"
+    port: "{{ endpoint.monitor.port | default('*') }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.monitor is defined
+    - (endpoint.monitor.type | default('http')) == 'tcp'

@@ -1,0 +1,72 @@
+---
+# Optional rate limiting. Two layers, used independently or together:
+#
+#   1. VS-level connection rate cap (applied via bigip_virtual_server's
+#      rate_limit/rate_limit_mode params in endpoint.yml — no work here).
+#   2. Named LTM rate-class (this file) for use by iRules or LTM policies
+#      that want bandwidth/pps caps per-URI or per-client.
+#
+# Schema:
+#   rate_limit:
+#     connections_per_sec: 1000     # VS-level (handled in endpoint.yml)
+#     mode: object                  # object | destination | source |
+#                                   # object-destination | source-destination |
+#                                   # object-source | object-source-destination
+#     rate_class:                   # optional named rate-class
+#       name: api_v1_rc
+#       rate: 10mbps                # F5 rate string (e.g. 10mbps, 1000pps)
+#       direction: any              # any | client | server
+#       burst_size: 0               # bytes
+#
+# No native f5_modules task for rate-class exists, so we use bigip_command
+# with a list-then-create/modify pattern for idempotency.
+#
+# Known limitation: the iControl REST endpoint for `tmsh list` returns 200
+# even when the object is missing, so `rc_check is failed` does not fire on
+# a truly fresh box and the modify branch may run against a nonexistent
+# rate-class on first run. Workaround: seed once via tmsh
+#   tmsh create ltm rate-class /Common/<name> rate <rate>
+# then this role takes over idempotently.
+
+- name: "{{ endpoint.name }} :: check rate-class existence"
+  bigip_command:
+    provider: "{{ f5_provider }}"
+    commands:
+      - "list ltm rate-class /{{ endpoint.partition | default('Common') }}/{{ endpoint.rate_limit.rate_class.name }}"
+  register: rc_check
+  failed_when: false
+  changed_when: false
+  when:
+    - endpoint.rate_limit is defined
+    - endpoint.rate_limit.rate_class is defined
+
+- name: "{{ endpoint.name }} :: create rate-class"
+  bigip_command:
+    provider: "{{ f5_provider }}"
+    commands:
+      - >-
+        create ltm rate-class /{{ endpoint.partition | default('Common') }}/{{ endpoint.rate_limit.rate_class.name }}
+        rate {{ endpoint.rate_limit.rate_class.rate }}
+        direction {{ endpoint.rate_limit.rate_class.direction | default('any') }}
+        burst-size {{ endpoint.rate_limit.rate_class.burst_size | default(0) }}
+  when:
+    - endpoint.rate_limit is defined
+    - endpoint.rate_limit.rate_class is defined
+    - rc_check is defined
+    - rc_check is failed
+
+- name: "{{ endpoint.name }} :: modify existing rate-class"
+  bigip_command:
+    provider: "{{ f5_provider }}"
+    commands:
+      - >-
+        modify ltm rate-class /{{ endpoint.partition | default('Common') }}/{{ endpoint.rate_limit.rate_class.name }}
+        rate {{ endpoint.rate_limit.rate_class.rate }}
+        direction {{ endpoint.rate_limit.rate_class.direction | default('any') }}
+        burst-size {{ endpoint.rate_limit.rate_class.burst_size | default(0) }}
+  when:
+    - endpoint.rate_limit is defined
+    - endpoint.rate_limit.rate_class is defined
+    - rc_check is defined
+    - rc_check is succeeded
+  changed_when: false

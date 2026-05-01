@@ -1,7 +1,29 @@
 ---
+- name: "{{ endpoint.name }} :: custom health monitor"
+  include_tasks: monitor.yml
+  when: endpoint.monitor is defined
+
 - name: "{{ endpoint.name }} :: SSL profiles"
   include_tasks: ssl.yml
   when: endpoint.ssl is defined
+
+- name: "{{ endpoint.name }} :: iRules"
+  include_tasks: irules.yml
+  when: endpoint.irules is defined
+
+- name: "{{ endpoint.name }} :: APM access policy"
+  include_tasks: apm.yml
+  when: endpoint.apm is defined
+
+- name: "{{ endpoint.name }} :: ASM/AWAF policy"
+  include_tasks: asm.yml
+  when: endpoint.waf is defined
+
+- name: "{{ endpoint.name }} :: rate-class"
+  include_tasks: rate_limit.yml
+  when:
+    - endpoint.rate_limit is defined
+    - endpoint.rate_limit.rate_class is defined
 
 - name: "{{ endpoint.name }} :: pool {{ endpoint.pool.name }}"
   bigip_pool:
@@ -9,9 +31,18 @@
     name: "{{ endpoint.pool.name }}"
     lb_method: "{{ endpoint.pool.lb_method | default('round-robin') }}"
     monitors:
-      - "{{ endpoint.pool.monitor | default('/Common/http') }}"
+      - "{{ pool_monitor }}"
     partition: "{{ endpoint.partition | default('Common') }}"
     state: present
+  vars:
+    pool_monitor: >-
+      {%- if endpoint.monitor is defined -%}
+      /{{ endpoint.partition | default('Common') }}/{{ endpoint.monitor.name }}
+      {%- elif endpoint.pool.monitor is defined -%}
+      {{ endpoint.pool.monitor }}
+      {%- else -%}
+      /Common/http
+      {%- endif -%}
 
 - name: "{{ endpoint.name }} :: pool members"
   bigip_pool_member:
@@ -34,12 +65,25 @@
     pool: "{{ endpoint.pool.name }}"
     snat: "{{ endpoint.snat | default('Automap') }}"
     profiles: "{{ endpoint_profiles }}"
+    irules: "{{ endpoint_irules }}"
+    policies: "{{ endpoint_policies }}"
+    rate_limit: "{{ endpoint.rate_limit.connections_per_sec | default(omit) }}"
+    rate_limit_mode: "{{ endpoint.rate_limit.mode | default(omit) }}"
     partition: "{{ endpoint.partition | default('Common') }}"
     state: present
   vars:
     base_profiles: "{{ endpoint.profiles | default(['http']) }}"
     clientssl_profile: >-
-      {{ [endpoint.ssl.clientssl.profile] if (endpoint.ssl.clientssl.profile is defined) else [] }}
+      {{ [endpoint.ssl.clientssl.profile] if (endpoint.ssl is defined and endpoint.ssl.clientssl is defined and endpoint.ssl.clientssl.profile is defined) else [] }}
     serverssl_profile: >-
-      {{ [endpoint.ssl.serverssl.profile] if (endpoint.ssl.serverssl is defined and endpoint.ssl.serverssl.profile is defined) else [] }}
-    endpoint_profiles: "{{ (base_profiles + clientssl_profile + serverssl_profile) | unique | list }}"
+      {{ [endpoint.ssl.serverssl.profile] if (endpoint.ssl is defined and endpoint.ssl.serverssl is defined and endpoint.ssl.serverssl.profile is defined) else [] }}
+    apm_profile: >-
+      {{ [endpoint.apm.access_profile] if (endpoint.apm is defined and endpoint.apm.access_profile is defined) else [] }}
+    endpoint_profiles: "{{ (base_profiles + clientssl_profile + serverssl_profile + apm_profile) | unique | list }}"
+    endpoint_irules: >-
+      {{ (endpoint.irules | default([]))
+         | map(attribute='name')
+         | map('regex_replace', '^(?!/)', '/' ~ (endpoint.partition | default('Common')) ~ '/')
+         | list }}
+    endpoint_policies: >-
+      {{ [endpoint.waf.policy_name] if (endpoint.waf is defined and endpoint.waf.policy_name is defined) else [] }}

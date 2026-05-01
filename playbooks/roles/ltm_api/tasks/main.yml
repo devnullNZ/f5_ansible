@@ -12,6 +12,11 @@
     gather_subset:
       - virtual-servers
       - ltm-pools
+      - irules
+      - http-monitors
+      - https-monitors
+      - tcp-monitors
+      - asm-policies
   register: ltm_facts
 
 - name: Validate LTM endpoint {{ endpoint.name }}
@@ -20,3 +25,4 @@
   loop_control:
     loop_var: endpoint
     label: "{{ endpoint.name }}"
+  when: not ansible_check_mode

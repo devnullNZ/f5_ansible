@@ -1,0 +1,51 @@
+---
+# Optional ASM/AWAF policy. Requires ASM provisioned on the BIG-IP.
+# Two creation paths:
+#   - import existing policy XML/JSON via policy_src
+#   - create from a built-in template (e.g. POLICY_TEMPLATE_API_SECURITY)
+#
+# Schema:
+#   waf:
+#     policy_name: api_v1_waf      # required
+#     policy_src: files/asm/api_v1_waf.xml      # optional (import)
+#     template: POLICY_TEMPLATE_API_SECURITY    # optional (template-based)
+#     enforcement_mode: blocking                # blocking | transparent
+#     active: true                              # apply policy after import
+#
+# Attachment to the VS happens in endpoint.yml via the `policies:` param.
+
+- name: "{{ endpoint.name }} :: import ASM policy from file"
+  bigip_asm_policy_import:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.waf.policy_name }}"
+    source: "{{ endpoint.waf.policy_src }}"
+    force: "{{ endpoint.waf.force | default(false) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.waf is defined
+    - endpoint.waf.policy_src is defined
+
+- name: "{{ endpoint.name }} :: create ASM policy from template"
+  bigip_asm_policy_manage:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.waf.policy_name }}"
+    template: "{{ endpoint.waf.template }}"
+    active: "{{ endpoint.waf.active | default(true) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.waf is defined
+    - endpoint.waf.policy_src is not defined
+    - endpoint.waf.template is defined
+
+- name: "{{ endpoint.name }} :: activate imported ASM policy"
+  bigip_asm_policy_manage:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.waf.policy_name }}"
+    active: "{{ endpoint.waf.active | default(true) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.waf is defined
+    - endpoint.waf.policy_src is defined

@@ -1,0 +1,64 @@
+---
+# Optional APM access policy attachment. Requires APM provisioned on the BIG-IP.
+# Direct OAuth provider/JWT config has no native module — define those inside
+# the access policy itself (built in TMUI / declarative API) and import the
+# resulting policy tarball here.
+#
+# Schema:
+#   apm:
+#     access_profile: api_oauth_access     # required: name on BIG-IP after import
+#     policy_src: files/apm/api_oauth_access.tar.gz   # optional: import if set
+#     per_request_policy: api_oauth_prp    # optional
+#     per_request_policy_src: files/apm/api_oauth_prp.tar.gz   # optional
+#     log_profile: /Common/default-log-setting          # optional
+#
+# Notes:
+#  - Policy tarballs are exported from a working BIG-IP via:
+#      tmsh save apm policy <name> file <tarball>
+#  - OAuth provider, scope, JWT validation, and token introspection are
+#    configured inside the access policy. This role only attaches the
+#    profile to the VS; profile content is the source of truth.
+
+- name: "{{ endpoint.name }} :: import APM access policy"
+  bigip_apm_policy_import:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.apm.access_profile }}"
+    source: "{{ endpoint.apm.policy_src }}"
+    type: access_policy
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.apm is defined
+    - endpoint.apm.policy_src is defined
+
+- name: "{{ endpoint.name }} :: import APM per-request policy"
+  bigip_apm_policy_import:
+    provider: "{{ f5_provider }}"
+    name: "{{ endpoint.apm.per_request_policy }}"
+    source: "{{ endpoint.apm.per_request_policy_src }}"
+    type: profile_access
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  when:
+    - endpoint.apm is defined
+    - endpoint.apm.per_request_policy is defined
+    - endpoint.apm.per_request_policy_src is defined
+
+- name: "{{ endpoint.name }} :: confirm APM access profile present"
+  bigip_device_info:
+    provider: "{{ f5_provider }}"
+    gather_subset:
+      - apm-access-profiles
+  register: apm_facts
+  when: endpoint.apm is defined
+
+- name: "{{ endpoint.name }} :: assert APM access profile exists"
+  assert:
+    that:
+      - (apm_facts.apm_access_profiles | default([]))
+          | selectattr('name', 'equalto', endpoint.apm.access_profile)
+          | list | length > 0
+    fail_msg: >-
+      APM access profile {{ endpoint.apm.access_profile }} not found on
+      BIG-IP — import a policy tarball via apm.policy_src or pre-create.
+  when: endpoint.apm is defined

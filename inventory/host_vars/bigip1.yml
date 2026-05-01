@@ -21,6 +21,56 @@ ltm_endpoints:
         - { host: 10.1.1.10, port: 80 }
         - { host: 10.1.1.11, port: 80 }
 
+  # Smoke-test endpoint — exercises every block in the ltm_api role.
+  # APM and WAF are commented out: lab v13.1.0.1 likely isn't provisioned
+  # for them. Run on the BIG-IP first to enable:
+  #   tmsh modify sys provision apm level nominal
+  #   tmsh modify sys provision asm level nominal
+  - name: api_smoke_vs
+    destination: 192.168.1.101
+    port: 443
+    snat: Automap
+    profiles:
+      - http
+    monitor:
+      name: api_smoke_https
+      type: https
+      send: "GET /healthz HTTP/1.1\r\nHost: smoke.example.com\r\nConnection: close\r\n\r\n"
+      receive: "200 OK"
+      interval: 5
+      timeout: 16
+      port: 443
+    ssl:
+      clientssl:
+        profile: api_smoke_clientssl
+        cert_name: default
+        key_name: default
+        parent: /Common/clientssl
+    irules:
+      - name: api_smoke_uri_routing
+        src: files/irules/api_uri_routing.tcl
+    rate_limit:
+      connections_per_sec: 1000
+      mode: object
+      rate_class:
+        name: api_smoke_rc
+        rate: 10mbps
+        direction: any
+        burst_size: 0
+    # apm:
+    #   access_profile: api_smoke_oauth
+    #   policy_src: playbooks/files/apm/api_smoke_oauth.tar.gz
+    # waf:
+    #   policy_name: api_smoke_waf
+    #   template: POLICY_TEMPLATE_API_SECURITY
+    #   active: true
+    pool:
+      name: api_smoke_pool
+      lb_method: round-robin
+      members:
+        - { host: 10.1.1.20, port: 443 }
+        - { host: 10.1.1.21, port: 443 }
+
 # ----- GSLB topology (only meaningful on hosts in f5_gtm_primary) -----
 gtm_datacenters:
   - name: dc1

@@ -1,0 +1,35 @@
+---
+# Per-endpoint iRule creation. Each item with `src:` is uploaded; items
+# without `src:` are treated as references to pre-existing iRules and are
+# only attached to the VS later.
+#
+# Schema:
+#   irules:
+#     - name: api_uri_routing
+#       src: files/irules/api_uri_routing.tcl
+#     - name: api_jwt_validate
+#       src: files/irules/api_jwt_validate.tcl
+#     - name: /Common/preexisting_irule    # reference only, no src
+#
+# Typical URI-based routing iRule (files/irules/api_uri_routing.tcl):
+#   when HTTP_REQUEST {
+#     switch -glob [HTTP::uri] {
+#       "/v1/*" { pool api_v1_pool }
+#       "/v2/*" { pool api_v2_pool }
+#       default { HTTP::respond 404 content "not found" }
+#     }
+#   }
+
+- name: "{{ endpoint.name }} :: create iRules"
+  bigip_irule:
+    provider: "{{ f5_provider }}"
+    name: "{{ item.name }}"
+    module: ltm
+    content: "{{ lookup('file', item.src) }}"
+    partition: "{{ endpoint.partition | default('Common') }}"
+    state: present
+  loop: "{{ endpoint.irules | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - item.src is defined

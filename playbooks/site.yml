@@ -7,6 +7,7 @@
   gather_facts: no
   collections:
     - f5networks.f5_modules
+  tags: ltm_api
   roles:
     - role: ltm_api
       when: ltm_endpoints | default([]) | length > 0
@@ -25,6 +26,7 @@
   gather_facts: no
   collections:
     - f5networks.f5_modules
+  tags: gslb
   roles:
     - role: openshift_routes
       when: openshift_clusters | default([]) | length > 0

@@ -19,7 +19,9 @@
       {{ [endpoint.ssl.clientssl.profile] if (endpoint.ssl is defined and endpoint.ssl.clientssl is defined) else [] }}
     serverssl_extra: >-
       {{ [endpoint.ssl.serverssl.profile] if (endpoint.ssl is defined and endpoint.ssl.serverssl is defined) else [] }}
-    expected_profile_names: "{{ (base_profiles + clientssl_extra + serverssl_extra) | unique | list }}"
+    apm_extra: >-
+      {{ [endpoint.apm.access_profile] if (endpoint.apm is defined) else [] }}
+    expected_profile_names: "{{ (base_profiles + clientssl_extra + serverssl_extra + apm_extra) | unique | list }}"
 
 - name: "{{ endpoint.name }} :: assert pool members configured"
   assert:
@@ -32,6 +34,69 @@
       {{ (ltm_facts.ltm_pools | default([]))
          | selectattr('name', 'equalto', endpoint.pool.name)
          | list | first | default(none) }}
+
+- name: "{{ endpoint.name }} :: assert custom health monitor attached"
+  assert:
+    that:
+      - (pool.monitors | default([]))
+          | select('search', endpoint.monitor.name)
+          | list | length > 0
+    fail_msg: "{{ endpoint.pool.name }} not using monitor {{ endpoint.monitor.name }}"
+  vars:
+    pool: >-
+      {{ (ltm_facts.ltm_pools | default([]))
+         | selectattr('name', 'equalto', endpoint.pool.name)
+         | list | first | default({}) }}
+  when: endpoint.monitor is defined
+
+- name: "{{ endpoint.name }} :: assert iRules attached"
+  assert:
+    that:
+      - (vs.irules | default([])) | length >= (endpoint.irules | length)
+      - expected_irule_names | difference(actual_irule_names) | length == 0
+    fail_msg: >-
+      {{ endpoint.name }} missing iRules.
+      expected={{ expected_irule_names }} actual={{ actual_irule_names }}
+  vars:
+    vs: >-
+      {{ (ltm_facts.virtual_servers | default([]))
+         | selectattr('name', 'equalto', endpoint.name)
+         | list | first | default({}) }}
+    actual_irule_names: >-
+      {{ (vs.irules | default([])) | map('regex_replace', '^/[^/]+/', '') | list }}
+    expected_irule_names: "{{ endpoint.irules | map(attribute='name') | map('regex_replace', '^/[^/]+/', '') | list }}"
+  when: endpoint.irules is defined
+
+- name: "{{ endpoint.name }} :: assert ASM policy attached"
+  assert:
+    that:
+      - (vs.policies | default([]))
+          | map('regex_replace', '^/[^/]+/', '')
+          | list
+          is superset([endpoint.waf.policy_name])
+    fail_msg: "{{ endpoint.name }} ASM policy {{ endpoint.waf.policy_name }} not attached"
+  vars:
+    vs: >-
+      {{ (ltm_facts.virtual_servers | default([]))
+         | selectattr('name', 'equalto', endpoint.name)
+         | list | first | default({}) }}
+  when: endpoint.waf is defined
+
+- name: "{{ endpoint.name }} :: assert VS rate limit applied"
+  assert:
+    that:
+      - (vs.rate_limit | int) == (endpoint.rate_limit.connections_per_sec | int)
+    fail_msg: >-
+      {{ endpoint.name }} rate_limit mismatch:
+      expected={{ endpoint.rate_limit.connections_per_sec }} actual={{ vs.rate_limit | default('unset') }}
+  vars:
+    vs: >-
+      {{ (ltm_facts.virtual_servers | default([]))
+         | selectattr('name', 'equalto', endpoint.name)
+         | list | first | default({}) }}
+  when:
+    - endpoint.rate_limit is defined
+    - endpoint.rate_limit.connections_per_sec is defined
 
 - name: "{{ endpoint.name }} :: report runtime availability"
   debug:
